@@ -6,4 +6,4 @@ TENSORBOARD_PATH=$ROOT_DIR/out/logs/$EXP_NAME
 
 mkdir -p $TENSORBOARD_PATH
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc_per_node=4 train.py config/train_gpt2_345M.py | tee -a ${TENSORBOARD_PATH}/output.log
+CUDA_VISIBLE_DEVICES=0,1 torchrun --standalone --nproc_per_node=2 train.py config/train_gpt2_345M.py | tee -a ${TENSORBOARD_PATH}/output.log
