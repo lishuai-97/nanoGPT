@@ -29,6 +29,8 @@ from torch.distributed import init_process_group, destroy_process_group
 
 from model import GPTConfig, GPT
 
+os.environ["WANDB_MODE"] = "offline"
+
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
@@ -43,6 +45,9 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 wandb_log = False # disabled by default
 wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
+# tensorboard logging
+tensorboard_log = True
+tensorboard_run_name = 'gpt2' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
@@ -246,6 +251,11 @@ if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
 
+# tensorboard logging
+if tensorboard_log and master_process:
+    from torch.utils.tensorboard import SummaryWriter
+    writer = SummaryWriter(log_dir=f'{out_dir}/logs/{tensorboard_run_name}')
+
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
@@ -271,6 +281,10 @@ while True:
                 "lr": lr,
                 "mfu": running_mfu*100, # convert to percentage
             })
+        
+        if tensorboard_log:
+            writer.add_scalar('val/loss', losses['val'], iter_num)
+        
         if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
             if iter_num > 0:
@@ -325,11 +339,19 @@ while True:
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+
+        if tensorboard_log:
+            writer.add_scalar('train/loss', lossf, iter_num)
+            writer.add_scalar('train/lr', lr, iter_num)
+            writer.add_scalar('train/mfu', running_mfu, iter_num)
+
     iter_num += 1
     local_iter_num += 1
 
     # termination conditions
     if iter_num > max_iters:
+        if tensorboard_log and master_process:
+            writer.close()
         break
 
 if ddp:
